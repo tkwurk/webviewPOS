@@ -81,15 +81,8 @@ public class MainActivity extends AppCompatActivity {
         // Register bridge as "AndroidPrint" to match web code expectations
         webView.addJavascriptInterface(new BluetoothPrintBridge(), "AndroidPrint");
 
-        // Check if outlet was previously selected
-        SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
-        String savedOutlet = prefs.getString(KEY_OUTLET, null);
-
-        if (savedOutlet != null) {
-            loadOutletUrl(savedOutlet);
-        } else {
-            showOutletPicker();
-        }
+        // Always show outlet picker on launch so any user can choose
+        showOutletPicker();
 
         // Request Bluetooth permissions at startup
         requestBluetoothPermissions();
@@ -102,16 +95,23 @@ public class MainActivity extends AppCompatActivity {
 
     private void showOutletPicker() {
         String[] outlets = {"Manonjaya", "Pamarican"};
+        // Pre-select the last used outlet
+        SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
+        String saved = prefs.getString(KEY_OUTLET, null);
+        int defaultIdx = "pamarican".equals(saved) ? 1 : 0;
+
         new AlertDialog.Builder(this)
             .setTitle("Select Outlet")
             .setCancelable(false)
-            .setItems(outlets, (dialog, which) -> {
-                String selected = (which == 0) ? "manonjaya" : "pamarican";
+            .setSingleChoiceItems(outlets, defaultIdx, null)
+            .setPositiveButton("OK", (dialog, which) -> {
+                int selected = ((AlertDialog) dialog).getListView().getCheckedItemPosition();
+                String outlet = (selected == 0) ? "manonjaya" : "pamarican";
                 getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
                     .edit()
-                    .putString(KEY_OUTLET, selected)
+                    .putString(KEY_OUTLET, outlet)
                     .apply();
-                loadOutletUrl(selected);
+                loadOutletUrl(outlet);
             })
             .show();
     }
