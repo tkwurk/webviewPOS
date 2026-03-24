@@ -1,10 +1,12 @@
 package com.posprod.webviewapp;
 
 import android.annotation.SuppressLint;
+import android.app.AlertDialog;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothManager;
 import android.bluetooth.BluetoothSocket;
+import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.util.Base64;
 import java.util.ArrayList;
@@ -34,7 +36,13 @@ import java.util.UUID;
 
 public class MainActivity extends AppCompatActivity {
     private WebView webView;
-    private static final String URL = "https://script.google.com/macros/s/AKfycbx8IHfpCTKmSDbO5-F0xQxd0uGmch8jVS5TjQmJCWYsxAMVMui7wiAsfyTcNT8rvkkz0g/exec";
+
+    // Outlet deployment URLs
+    private static final String URL_MANONJAYA = "https://script.google.com/macros/s/AKfycbzFnOfWUIO0KZYQS8HLXCY_vYHNGK6j_wLbw0-HM-9fr9PrE0MH15AFhNnziFroUFsCFg/exec";
+    private static final String URL_PAMARICAN = "https://script.google.com/macros/s/AKfycbx8IHfpCTKmSDbO5-F0xQxd0uGmch8jVS5TjQmJCWYsxAMVMui7wiAsfyTcNT8rvkkz0g/exec";
+
+    private static final String PREFS_NAME = "posprod_prefs";
+    private static final String KEY_OUTLET = "selected_outlet";
 
     // Standard SPP UUID for Bluetooth serial (used by most thermal printers)
     private static final UUID SPP_UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB");
@@ -72,10 +80,40 @@ public class MainActivity extends AppCompatActivity {
 
         // Register bridge as "AndroidPrint" to match web code expectations
         webView.addJavascriptInterface(new BluetoothPrintBridge(), "AndroidPrint");
-        webView.loadUrl(URL);
+
+        // Check if outlet was previously selected
+        SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
+        String savedOutlet = prefs.getString(KEY_OUTLET, null);
+
+        if (savedOutlet != null) {
+            loadOutletUrl(savedOutlet);
+        } else {
+            showOutletPicker();
+        }
 
         // Request Bluetooth permissions at startup
         requestBluetoothPermissions();
+    }
+
+    private void loadOutletUrl(String outlet) {
+        String url = "pamarican".equals(outlet) ? URL_PAMARICAN : URL_MANONJAYA;
+        webView.loadUrl(url);
+    }
+
+    private void showOutletPicker() {
+        String[] outlets = {"Manonjaya", "Pamarican"};
+        new AlertDialog.Builder(this)
+            .setTitle("Select Outlet")
+            .setCancelable(false)
+            .setItems(outlets, (dialog, which) -> {
+                String selected = (which == 0) ? "manonjaya" : "pamarican";
+                getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+                    .edit()
+                    .putString(KEY_OUTLET, selected)
+                    .apply();
+                loadOutletUrl(selected);
+            })
+            .show();
     }
 
     // ------------------------------------------------------------------
@@ -132,6 +170,19 @@ public class MainActivity extends AppCompatActivity {
         @JavascriptInterface
         public boolean isAvailable() {
             return bluetoothAdapter != null && hasBtPermissions();
+        }
+
+        /** Return the currently selected outlet name */
+        @JavascriptInterface
+        public String getOutlet() {
+            SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
+            return prefs.getString(KEY_OUTLET, "");
+        }
+
+        /** Show the outlet picker dialog to switch outlets */
+        @JavascriptInterface
+        public void switchOutlet() {
+            runOnUiThread(() -> showOutletPicker());
         }
 
         /** Return JSON array of paired Bluetooth device names */
