@@ -6,6 +6,8 @@ import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothManager;
 import android.bluetooth.BluetoothSocket;
 import android.content.pm.PackageManager;
+import java.util.ArrayList;
+import java.util.List;
 import android.os.Build;
 import android.os.Bundle;
 import android.webkit.JavascriptInterface;
