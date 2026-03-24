@@ -5,10 +5,6 @@ import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothManager;
 import android.bluetooth.BluetoothSocket;
-import android.content.BroadcastReceiver;
-import android.content.Context;
-import android.content.Intent;
-import android.content.IntentFilter;
 import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.Bundle;
@@ -30,8 +26,6 @@ import androidx.core.content.ContextCompat;
 import org.json.JSONArray;
 
 import java.io.OutputStream;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
@@ -46,10 +40,7 @@ public class MainActivity extends AppCompatActivity {
 
     private BluetoothAdapter bluetoothAdapter;
 
-    // Discovery state
-    private final List<String> discoveredDevices = new ArrayList<>();
-    private boolean discovering = false;
-    private String discoveryCallbackName = null;
+
 
     @SuppressLint({"SetJavaScriptEnabled", "JavascriptInterface"})
     @Override
@@ -127,61 +118,7 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    // ------------------------------------------------------------------
-    // BroadcastReceiver for classic Bluetooth discovery
-    // ------------------------------------------------------------------
-    private final BroadcastReceiver discoveryReceiver = new BroadcastReceiver() {
-        @SuppressLint("MissingPermission")
-        @Override
-        public void onReceive(Context context, Intent intent) {
-            String action = intent.getAction();
-            if (BluetoothDevice.ACTION_FOUND.equals(action)) {
-                BluetoothDevice device = intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE);
-                if (device != null) {
-                    String name = device.getName();
-                    String addr = device.getAddress();
-                    String entry = (name != null ? name : "Unknown") + "|" + addr;
-                    if (!discoveredDevices.contains(entry)) {
-                        discoveredDevices.add(entry);
-                    }
-                }
-            } else if (BluetoothAdapter.ACTION_DISCOVERY_FINISHED.equals(action)) {
-                discovering = false;
-                notifyDiscoveryComplete();
-            }
-        }
-    };
 
-    @SuppressLint("MissingPermission")
-    private void notifyDiscoveryComplete() {
-        // Also add paired devices that weren't found in discovery
-        if (bluetoothAdapter != null) {
-            Set<BluetoothDevice> paired = bluetoothAdapter.getBondedDevices();
-            if (paired != null) {
-                for (BluetoothDevice d : paired) {
-                    String name = d.getName();
-                    String addr = d.getAddress();
-                    String entry = (name != null ? name : "Unknown") + "|" + addr;
-                    if (!discoveredDevices.contains(entry)) {
-                        discoveredDevices.add(entry);
-                    }
-                }
-            }
-        }
-
-        // Build JSON array and send to JS callback
-        JSONArray arr = new JSONArray();
-        for (String dev : discoveredDevices) {
-            arr.put(dev);
-        }
-        String js = "javascript:if(typeof window._onBtDiscoveryComplete==='function'){window._onBtDiscoveryComplete(" + arr.toString() + ");}";
-        runOnUiThread(() -> webView.evaluateJavascript(
-            "if(typeof window._onBtDiscoveryComplete==='function'){window._onBtDiscoveryComplete(" + arr.toString() + ");}",
-            null
-        ));
-
-        try { unregisterReceiver(discoveryReceiver); } catch (Exception ignored) {}
-    }
 
     // ------------------------------------------------------------------
     // JavaScript bridge — exposed as window.AndroidPrint
@@ -228,9 +165,9 @@ public class MainActivity extends AppCompatActivity {
         }
 
         /**
-         * Start classic Bluetooth discovery.
-         * Results are delivered asynchronously via window._onBtDiscoveryComplete(jsonArray).
-         * Returns "ok" or "error:reason".
+         * Return JSON array of all paired Bluetooth devices as "Name|MAC".
+         * Printers must be paired via Android Settings first.
+         * Returns JSON string or "error:reason".
          */
         @SuppressLint("MissingPermission")
         @JavascriptInterface
@@ -239,30 +176,16 @@ public class MainActivity extends AppCompatActivity {
             if (!hasBtPermissions()) return "error:Bluetooth permissions not granted";
             if (!bluetoothAdapter.isEnabled()) return "error:Bluetooth is off. Please enable it in Settings.";
 
-            discoveredDevices.clear();
-            discovering = true;
-
-            IntentFilter filter = new IntentFilter();
-            filter.addAction(BluetoothDevice.ACTION_FOUND);
-            filter.addAction(BluetoothAdapter.ACTION_DISCOVERY_FINISHED);
-            registerReceiver(discoveryReceiver, filter);
-
-            // Cancel any ongoing discovery, then start fresh
-            bluetoothAdapter.cancelDiscovery();
-            bluetoothAdapter.startDiscovery();
-
-            return "ok";
-        }
-
-        /** Cancel an ongoing discovery */
-        @SuppressLint("MissingPermission")
-        @JavascriptInterface
-        public void cancelDiscovery() {
-            if (bluetoothAdapter != null && bluetoothAdapter.isDiscovering()) {
-                bluetoothAdapter.cancelDiscovery();
+            JSONArray arr = new JSONArray();
+            Set<BluetoothDevice> paired = bluetoothAdapter.getBondedDevices();
+            if (paired != null) {
+                for (BluetoothDevice d : paired) {
+                    String name = d.getName();
+                    String addr = d.getAddress();
+                    arr.put((name != null ? name : "Unknown") + "|" + addr);
+                }
             }
-            discovering = false;
-            try { unregisterReceiver(discoveryReceiver); } catch (Exception ignored) {}
+            return arr.toString();
         }
 
         /**
@@ -323,14 +246,9 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    @SuppressLint("MissingPermission")
     @Override
     protected void onDestroy() {
         super.onDestroy();
-        if (bluetoothAdapter != null && bluetoothAdapter.isDiscovering()) {
-            bluetoothAdapter.cancelDiscovery();
-        }
-        try { unregisterReceiver(discoveryReceiver); } catch (Exception ignored) {}
     }
 
     private class CustomWebViewClient extends WebViewClient {
