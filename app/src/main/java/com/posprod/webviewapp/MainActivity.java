@@ -6,6 +6,7 @@ import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothManager;
 import android.bluetooth.BluetoothSocket;
 import android.content.pm.PackageManager;
+import android.util.Base64;
 import java.util.ArrayList;
 import java.util.List;
 import android.os.Build;
@@ -191,16 +192,24 @@ public class MainActivity extends AppCompatActivity {
         }
 
         /**
-         * Print ESC/POS data to a Bluetooth printer by name.
-         * Finds the printer among paired devices and sends raw bytes via SPP.
+         * Print Base64-encoded ESC/POS data to a Bluetooth printer by name.
+         * The data must be Base64-encoded in JavaScript to preserve control bytes.
          * Returns "ok" or "error:reason".
          */
         @SuppressLint("MissingPermission")
         @JavascriptInterface
-        public String printEscPos(String printerName, String escPosData) {
+        public String printEscPos(String printerName, String escPosBase64) {
             if (bluetoothAdapter == null) return "error:Bluetooth not available";
             if (!hasBtPermissions()) return "error:Bluetooth permissions not granted";
             if (!bluetoothAdapter.isEnabled()) return "error:Bluetooth is off";
+
+            // Decode Base64 to raw bytes
+            byte[] rawData;
+            try {
+                rawData = Base64.decode(escPosBase64, Base64.DEFAULT);
+            } catch (Exception e) {
+                return "error:Invalid data encoding: " + e.getMessage();
+            }
 
             // Find the target device among paired devices
             Set<BluetoothDevice> paired = bluetoothAdapter.getBondedDevices();
@@ -223,7 +232,7 @@ public class MainActivity extends AppCompatActivity {
                 socket = target.createRfcommSocketToServiceRecord(SPP_UUID);
                 socket.connect();
                 OutputStream os = socket.getOutputStream();
-                os.write(escPosData.getBytes("ISO-8859-1")); // ESC/POS uses single-byte encoding
+                os.write(rawData);
                 os.flush();
                 return "ok";
             } catch (Exception e) {
