@@ -194,7 +194,7 @@ public class MainActivity extends AppCompatActivity {
         /**
          * Print Base64-encoded ESC/POS data to a Bluetooth printer by name.
          * The data must be Base64-encoded in JavaScript to preserve control bytes.
-         * Returns "ok" or "error:reason".
+         * Returns "ok:NNbytes" or "error:reason".
          */
         @SuppressLint("MissingPermission")
         @JavascriptInterface
@@ -211,7 +211,7 @@ public class MainActivity extends AppCompatActivity {
                 return "error:Invalid data encoding: " + e.getMessage();
             }
 
-            if (rawData.length == 0) return "error:Empty print data";
+            if (rawData.length == 0) return "error:Empty print data (0 bytes from base64 length " + escPosBase64.length() + ")";
 
             // Find the target device among paired devices
             Set<BluetoothDevice> paired = bluetoothAdapter.getBondedDevices();
@@ -231,25 +231,17 @@ public class MainActivity extends AppCompatActivity {
 
             BluetoothSocket socket = null;
             try {
-                // Try standard SPP UUID first
                 socket = connectToDevice(target);
                 OutputStream os = socket.getOutputStream();
 
-                // Write in chunks — some printers have small receive buffers
-                int chunkSize = 512;
-                for (int offset = 0; offset < rawData.length; offset += chunkSize) {
-                    int len = Math.min(chunkSize, rawData.length - offset);
-                    os.write(rawData, offset, len);
-                    os.flush();
-                    if (offset + len < rawData.length) {
-                        Thread.sleep(50); // brief pause between chunks
-                    }
-                }
+                // Single write, same as testPrint which works
+                os.write(rawData);
+                os.flush();
 
-                // Wait for printer to process the data before closing
-                Thread.sleep(1000);
+                // Wait for printer to fully process before closing
+                Thread.sleep(1500);
 
-                return "ok";
+                return "ok:" + rawData.length + "bytes";
             } catch (Exception e) {
                 return "error:" + e.getMessage();
             } finally {
