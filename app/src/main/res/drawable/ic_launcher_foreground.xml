@@ -1,0 +1,22 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Gas pump icon -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M44,28h20v4h-20z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M42,32h24v40h-24z" />
+    <path
+        android:fillColor="#4CAF50"
+        android:pathData="M46,38h16v12h-16z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M68,40h4v2h2v16h-2v2h-4z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M38,72h32v4h-32z" />
+</vector>
