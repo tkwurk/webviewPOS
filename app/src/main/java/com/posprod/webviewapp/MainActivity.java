@@ -211,6 +211,8 @@ public class MainActivity extends AppCompatActivity {
                 return "error:Invalid data encoding: " + e.getMessage();
             }
 
+            if (rawData.length == 0) return "error:Empty print data";
+
             // Find the target device among paired devices
             Set<BluetoothDevice> paired = bluetoothAdapter.getBondedDevices();
             BluetoothDevice target = null;
@@ -229,11 +231,108 @@ public class MainActivity extends AppCompatActivity {
 
             BluetoothSocket socket = null;
             try {
-                socket = target.createRfcommSocketToServiceRecord(SPP_UUID);
-                socket.connect();
+                // Try standard SPP UUID first
+                socket = connectToDevice(target);
                 OutputStream os = socket.getOutputStream();
-                os.write(rawData);
+
+                // Write in chunks — some printers have small receive buffers
+                int chunkSize = 512;
+                for (int offset = 0; offset < rawData.length; offset += chunkSize) {
+                    int len = Math.min(chunkSize, rawData.length - offset);
+                    os.write(rawData, offset, len);
+                    os.flush();
+                    if (offset + len < rawData.length) {
+                        Thread.sleep(50); // brief pause between chunks
+                    }
+                }
+
+                // Wait for printer to process the data before closing
+                Thread.sleep(1000);
+
+                return "ok";
+            } catch (Exception e) {
+                return "error:" + e.getMessage();
+            } finally {
+                if (socket != null) {
+                    try { socket.close(); } catch (Exception ignored) {}
+                }
+            }
+        }
+
+        /**
+         * Connect to Bluetooth device — tries standard SPP UUID first,
+         * then falls back to reflection-based RFCOMM on port 1.
+         */
+        @SuppressLint("MissingPermission")
+        private BluetoothSocket connectToDevice(BluetoothDevice device) throws Exception {
+            BluetoothSocket socket;
+            try {
+                socket = device.createRfcommSocketToServiceRecord(SPP_UUID);
+                socket.connect();
+                return socket;
+            } catch (Exception e1) {
+                // Fallback: use reflection to connect on RFCOMM channel 1
+                try {
+                    socket = (BluetoothSocket) device.getClass()
+                        .getMethod("createRfcommSocket", int.class)
+                        .invoke(device, 1);
+                    if (socket != null) {
+                        socket.connect();
+                        return socket;
+                    }
+                } catch (Exception e2) {
+                    // ignore fallback error, throw original
+                }
+                throw new Exception("Could not connect: " + e1.getMessage() + ". Make sure printer is ON and nearby.");
+            }
+        }
+
+        /**
+         * Send a simple test print to verify the printer works.
+         * Sends plain text "TEST PRINT OK" with a line feed and paper cut.
+         */
+        @SuppressLint("MissingPermission")
+        @JavascriptInterface
+        public String testPrint(String printerName) {
+            if (bluetoothAdapter == null) return "error:Bluetooth not available";
+            if (!hasBtPermissions()) return "error:Bluetooth permissions not granted";
+            if (!bluetoothAdapter.isEnabled()) return "error:Bluetooth is off";
+
+            Set<BluetoothDevice> paired = bluetoothAdapter.getBondedDevices();
+            BluetoothDevice target = null;
+            if (paired != null) {
+                for (BluetoothDevice d : paired) {
+                    if (printerName.equals(d.getName()) || printerName.equals(d.getAddress())) {
+                        target = d;
+                        break;
+                    }
+                }
+            }
+            if (target == null) return "error:Printer not found";
+
+            if (bluetoothAdapter.isDiscovering()) bluetoothAdapter.cancelDiscovery();
+
+            BluetoothSocket socket = null;
+            try {
+                socket = connectToDevice(target);
+                OutputStream os = socket.getOutputStream();
+                // ESC @ = init, plain text, line feeds, paper cut
+                byte[] testData = new byte[] {
+                    0x1B, 0x40,                           // ESC @ = Initialize printer
+                    0x1B, 0x61, 0x01,                     // ESC a 1 = Center align
+                    'T', 'E', 'S', 'T', ' ',
+                    'P', 'R', 'I', 'N', 'T', ' ',
+                    'O', 'K', 0x0A,                       // LF
+                    '-', '-', '-', '-', '-', '-', '-', '-',
+                    '-', '-', '-', '-', '-', '-', '-', '-', 0x0A,
+                    'P', 'r', 'i', 'n', 't', 'e', 'r', ' ',
+                    'W', 'o', 'r', 'k', 'i', 'n', 'g', '!', 0x0A,
+                    0x0A, 0x0A, 0x0A,                     // Feed paper
+                    0x1D, 0x56, 0x00                      // GS V 0 = Full cut
+                };
+                os.write(testData);
                 os.flush();
+                Thread.sleep(1000);
                 return "ok";
             } catch (Exception e) {
                 return "error:" + e.getMessage();
